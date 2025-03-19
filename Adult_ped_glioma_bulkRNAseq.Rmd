@@ -1,0 +1,576 @@
+---
+title: "CGGA and SJC bulk RNA-seq differential expression analysis"
+author: Aleysha Chen
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*.
+
+### Preliminary pass at pediatric vs. adult (CGGA only)
+```{r}
+library(DESeq2)
+library(limma)
+```
+
+```{r}
+# Load n=693 and n=325 datasets
+countData_693 <- as.data.frame(read_tsv('CGGA.mRNAseq_693.Read_Counts-genes.20220620.txt'))
+colData_693 <- as.data.frame(read_tsv('CGGA.mRNAseq_693_clinical.20200506.txt'))
+countData_325 <- as.data.frame(read_tsv('CGGA.mRNAseq_325.Read_Counts-genes.20220620.txt'))
+colData_325 <- as.data.frame(read_tsv('CGGA.mRNAseq_325_clinical.20200506.txt'))
+  
+```
+
+```{r}
+# Combine datasets and annotate with dataset source + pediatric age category
+colData_693$Age_type <- ifelse(colData_693$Age <= 21, "Pediatric", "Adult")
+colData_693$Dataset <- "cgga_693"
+colData_325$Age_type <- ifelse(colData_325$Age <= 21, "Pediatric", "Adult")
+colData_325$Dataset <- "cgga_325"
+
+countData_total <- cbind(countData_693, countData_325)
+colData_total <- rbind(colData_693, colData_325)
+```
+
+```{r}
+rownames(colData_total) <- colData_total$CGGA_ID
+colData_total$CGGA_ID <- NULL
+```
+
+```{r}
+duplicates <- names(countData_total)[duplicated(names(countData_total))]
+print(duplicates)  # Show only the duplicated column names
+
+which(duplicated(names(countData_total)) | duplicated(names(countData_total), fromLast = TRUE))
+countData_total <- countData_total[, !duplicated(names(countData_total))]
+```
+
+```{r}
+rownames(countData_total) <- countData_total$gene_name
+countData_total$gene_name <- NULL
+```
+
+```{r}
+# Find and remove samples without age (NA age)
+na_age <- rownames(colData_total[is.na(colData_total$Age_type),])
+countData_total <- countData_total[ , !names(countData_total) %in% c(na_age)]
+colData_total <- drop_na(colData_total, Age_type)
+```
+
+```{r}
+setdiff(names(countData_total)[-1], rownames(colData_total))  # Columns in countData_total missing from colData_total
+setdiff(rownames(colData_total), names(countData_total))  # Rows in colData_total missing from countData_total
+na_age
+```
+
+```{r}
+# Ensure sequence of rownames in colData_total matches that of colnames in countData_total
+
+colData_total <- colData_total[order(rownames(colData_total)), ]
+countData_total <- countData_total[ , order(names(countData_total))]
+```
+
+
+```{r}
+identical(colnames(countData_total), rownames(colData_total))
+```
+```{r}
+colData_total$Grade_type <- ifelse(colData_total$Grade %in% c("WHO I", "WHO II"), "LGG", "HGG")
+colData_total
+```
+
+```{r}
+# Filter only for pediatric or adult samples
+colData_adult <- subset(colData_total, Age_type == "Adult")
+countData_adult <- select(countData_total, row.names(colData_adult))
+colData_ped <- subset(colData_total, Age_type == "Pediatric")
+countData_ped <- select(countData_total, row.names(colData_ped))
+```
+
+```{r}
+# Build DESeqDataSet object
+dds <- DESeqDataSetFromMatrix(countData = countData_total,
+                              colData = colData_total,
+                              design =~Age_type)
+dds
+```
+```{r}
+# Run DESeq pipeline
+dds <- DESeq(dds)
+sizeFactors(dds)
+dispersions(dds)
+results(dds)
+```
+
+```{r}
+# Run PCA to visualize differences within consolidated dataset (and remove batch effects if necessary)
+vsdata <- vst(dds, blind=FALSE)
+plotPCA(vsdata, intgroup="Age_type")
+plotPCA(vsdata, intgroup="Dataset")
+```
+
+```{r}
+res <- results(dds, contrast = c('Age_type', 'Pediatric', 'Adult'), tidy=TRUE)
+res <- tbl_df(res)
+res
+```
+
+```{r}
+# Sort results by adjusted p-values and log2FC values
+res_sorted <- res %>% arrange(padj, desc(log2FoldChange))
+
+# Identify and filter for significantly differentially expressed genes
+res_filtered <- res_sorted %>% filter(padj<0.05)
+
+write.csv(as.data.frame(res_filtered), file='cgga_PedvAdult.csv')
+```
+
+```{r}
+# Visualize results using volcano plot
+
+# The significantly differentially expressed genes are the ones found in the upper-left and upper-right corners.
+# Add a column to the data frame to specify if they are UP- or DOWN- regulated (log2FoldChange respectively positive or negative)
+
+# add a column of NAs
+res$diffexpressed <- "NO"
+# if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+res$diffexpressed[res$log2FoldChange > 0.6 & res$padj < 0.05] <- "UP"
+# if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+res$diffexpressed[res$log2FoldChange < -0.6 & res$padj < 0.05] <- "DOWN"
+
+# Re-plot but this time color the points with "diffexpressed"
+p <- ggplot(data=res, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed)) + geom_point() + theme_minimal()
+
+# Add lines as before...
+p2 <- p + geom_vline(xintercept=c(-0.6, 0.6), col="red") +
+        geom_hline(yintercept=-log10(0.05), col="red")
+```
+
+```{r}
+## Change point color 
+
+# 1. by default, it is assigned to the categories in an alphabetical order):
+p3 <- p2 + scale_color_manual(values=c("blue", "black", "red"))
+
+# 2. to automate a bit: ceate a named vector: the values are the colors to be used, the names are the categories they will be assigned to:
+mycolors <- c("blue", "red", "black")
+names(mycolors) <- c("DOWN", "UP", "NO")
+p3 <- p2 + scale_colour_manual(values = mycolors)
+```
+
+```{r}
+# Label genes beside the points
+# Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+res$delabel <- NA
+res$delabel[res$diffexpressed != "NO"] <- res$row[res$diffexpressed != "NO"]
+```
+
+```{r}
+# Finally, organize labels  using the "ggrepel" 
+# load library
+library(ggrepel)
+# plot adding up all layers we have seen so far
+ggplot(data=res, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed, label=delabel)) +
+        geom_point() + 
+        theme_minimal() +
+        geom_text_repel() +
+        scale_color_manual(values=c("blue", "black", "red")) +
+        geom_vline(xintercept=c(-0.6, 0.6), col="red") +
+        geom_hline(yintercept=-log10(0.05), col="red")
+```
+
+```{r}
+# Number of pediatric vs. adult samples
+print(paste0('Number of pediatric samples: ', length(which(colData_total$Age_type == 'Pediatric'))))
+print(paste0('Number of adult samples: ', length(which(colData_total$Age_type == 'Adult'))))
+```
+
+### HGG vs. LGG (in adult cohort from CGGA)
+```{r}
+# Build DESeqDataSet object
+dds_adult <- DESeqDataSetFromMatrix(countData = countData_adult,
+                              colData = colData_adult,
+                              design =~Grade_type)
+dds_adult
+```
+
+```{r}
+# Run DESeq pipeline
+dds_adult <- DESeq(dds_adult)
+sizeFactors(dds_adult)
+dispersions(dds_adult)
+results(dds_adult)
+```
+
+```{r}
+# Run PCA to visualize differences within consolidated dataset (and remove batch effects if necessary)
+vsdata_adult <- vst(dds_adult, blind=FALSE)
+plotPCA(vsdata_adult, intgroup="Grade_type")
+plotPCA(vsdata_adult, intgroup="Dataset")
+```
+
+```{r}
+res_adult <- results(dds_adult, contrast = c('Grade_type', 'HGG', 'LGG'), tidy=TRUE)
+res_adult <- tbl_df(res_adult)
+res_adult
+```
+
+```{r}
+# Sort results by adjusted p-values and log2FC values
+res_adult_sorted <- res_adult %>% arrange(padj, desc(log2FoldChange))
+
+# Identify and filter for significantly differentially expressed genes
+res_adult_filtered <- res_adult_sorted %>% filter(padj<0.05)
+
+write.csv(as.data.frame(res_adult_filtered), file='cgga_Adult_HGGvLGG.csv')
+```
+
+```{r}
+write.csv(as.data.frame(res_adult_sorted), file='cgga_Adult_HGGvLGG_unfiltered.csv')
+```
+
+```{r}
+# Visualize results using volcano plot
+
+# The significantly differentially expressed genes are the ones found in the upper-left and upper-right corners.
+# Add a column to the data frame to specify if they are UP- or DOWN- regulated (log2FoldChange respectively positive or negative)
+
+# add a column of NAs
+res_adult$diffexpressed <- "NO"
+# if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+res_adult$diffexpressed[res_adult$log2FoldChange > 0.6 & res_adult$padj < 0.05] <- "UP"
+# if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+res_adult$diffexpressed[res_adult$log2FoldChange < -0.6 & res_adult$padj < 0.05] <- "DOWN"
+
+# Re-plot but this time color the points with "diffexpressed"
+p_adult <- ggplot(data=res_adult, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed)) + geom_point() + theme_minimal()
+
+# Add lines as before...
+p2_adult <- p_adult + geom_vline(xintercept=c(-0.6, 0.6), col="red") +
+        geom_hline(yintercept=-log10(0.05), col="red")
+```
+
+```{r}
+## Change point color 
+
+# 1. by default, it is assigned to the categories in an alphabetical order):
+p3_adult <- p2_adult + scale_color_manual(values=c("blue", "black", "red"))
+
+# 2. to automate a bit: ceate a named vector: the values are the colors to be used, the names are the categories they will be assigned to:
+mycolors <- c("blue", "red", "black")
+names(mycolors) <- c("DOWN", "UP", "NO")
+p3_adult <- p2_adult + scale_colour_manual(values = mycolors)
+```
+
+```{r}
+# Label genes beside the points
+# Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+res_adult$delabel <- NA
+res_adult$delabel[res_adult$diffexpressed != "NO"] <- res_adult$row[res_adult$diffexpressed != "NO"]
+```
+
+```{r}
+# Finally, organize labels  using the "ggrepel"
+# load library
+library(ggrepel)
+# plot adding up all layers we have seen so far
+ggplot(data=res_adult, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed, label=delabel)) +
+        geom_point() + 
+        theme_minimal() +
+        geom_text_repel(aes(label=ifelse(abs(log2FoldChange)>3,as.character(delabel),'')),
+                        point.padding = 0.5) +
+        scale_color_manual(values=c("blue", "black", "red")) +
+        geom_vline(xintercept=c(-0.6, 0.6), col="red") +
+        geom_hline(yintercept=-log10(0.05), col="red")
+```
+```{r}
+nrow(subset(colData_adult, Grade_type == 'LGG'))
+```
+
+### Incorporate St. Jude pediatric glioma dataset to CGGA for pediatric vs. adult analysis
+```{r}
+# Combine CGGA total dataset with SJC glioma dataset
+countData_SJC <- as.data.frame(read_csv('SJC_Ped_countData.csv'))
+rownames(countData_SJC) <- countData_SJC$Gene
+colData_SJC <- as.data.frame(read_csv('SJC_Ped_colData.csv'))
+# row.names(colData_SJC) <- colData_SJC$sample_name
+# rownames(colData_SJC) <- colData_SJC$sample_name
+countData_CGGA_SJC <- merge(countData_total, countData_SJC, by='row.names', all=FALSE)
+rownames(countData_CGGA_SJC) <- countData_CGGA_SJC$Row.names
+countData_CGGA_SJC <- countData_CGGA_SJC[ , !(names(countData_CGGA_SJC) %in% c('Row.names'))]
+```
+
+```{r}
+# countData_CGGA_SJC
+colData_CGGA_age <- colData_total[c('Age_type', 'Dataset')]
+colData_SJC_clean <- colData_SJC[!duplicated(colData_SJC$sample_name),]
+rownames(colData_SJC_clean) <- colData_SJC_clean$sample_name
+colData_SJC_age <- colData_SJC_clean %>% 
+  mutate(Age_type = 'Pediatric', Dataset = 'SJC') %>%
+  select(c('Age_type', 'Dataset'))
+colData_CGGA_SJC_age <- rbind(colData_CGGA_age, colData_SJC_age)
+```
+
+
+```{r}
+common_samples <- intersect(rownames(colData_CGGA_SJC_age), names(countData_CGGA_SJC))
+colData_CGGA_SJC_age <- colData_CGGA_SJC_age[common_samples, , drop=FALSE] 
+countData_CGGA_SJC <- countData_CGGA_SJC[, common_samples, drop=FALSE] 
+```
+
+
+```{r}
+# print(colnames(countData_CGGA_SJC))
+# print(rownames(colData_CGGA_SJC_age))
+identical(colnames(countData_CGGA_SJC), rownames(colData_CGGA_SJC_age))
+```
+
+
+```{r}
+# Build DESeqDataSet object
+dds <- DESeqDataSetFromMatrix(countData = countData_CGGA_SJC,
+                              colData = colData_CGGA_SJC_age,
+                              design = ~ Dataset + Age_type)
+dds
+```
+
+```{r}
+# Run DESeq pipeline
+dds <- DESeq(dds)
+vsdata <- vst(dds, blind=FALSE)
+
+# Run PCA to visualize differences within consolidated dataset (and remove batch effects if necessary)
+plotPCA(vsdata, intgroup="Age_type")
+plotPCA(vsdata, intgroup="Dataset")
+
+mat <- assay(vsdata)
+design_age <- model.matrix(~Age_type, data=colData_CGGA_SJC_age)
+mat <- limma::removeBatchEffect(mat, batch=vsdata$Dataset, design = design_age)
+assay(vsdata) <- mat
+
+# Check PCA after batch effect removal
+plotPCA(vsdata, intgroup="Age_type")
+plotPCA(vsdata, intgroup="Dataset")
+
+# sizeFactors(dds)
+# dispersions(dds)
+```
+
+```{r}
+res <- results(dds, contrast = c('Age_type', 'Pediatric', 'Adult'), tidy=TRUE)
+res <- tbl_df(res)
+res
+```
+
+```{r}
+# Sort results by adjusted p-values and log2FC values
+res_sorted <- res %>% arrange(padj, desc(log2FoldChange))
+
+# Identify and filter for significantly differentially expressed genes
+res_filtered <- res_sorted %>% filter(padj<0.05)
+
+write.csv(as.data.frame(res_filtered), file='cgga_sjc_PedvAdult.csv')
+```
+
+```{r}
+# Visualize results using volcano plot
+
+# The significantly differentially expressed genes are the ones found in the upper-left and upper-right corners.
+# Add a column to the data frame to specify if they are UP- or DOWN- regulated (log2FoldChange respectively positive or negative)
+
+# add a column of NAs
+res$diffexpressed <- "NO"
+# if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+res$diffexpressed[res$log2FoldChange > 0.6 & res$padj < 0.05] <- "UP"
+# if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+res$diffexpressed[res$log2FoldChange < -0.6 & res$padj < 0.05] <- "DOWN"
+
+# Re-plot but this time color the points with "diffexpressed"
+p <- ggplot(data=res, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed)) + geom_point() + theme_minimal()
+
+# Add lines as before...
+p2 <- p + geom_vline(xintercept=c(-0.6, 0.6), col="red") +
+        geom_hline(yintercept=-log10(0.05), col="red")
+```
+
+```{r}
+## Change point color 
+
+# 1. by default, it is assigned to the categories in an alphabetical order):
+p3 <- p2 + scale_color_manual(values=c("blue", "black", "red"))
+
+# 2. to automate a bit: ceate a named vector: the values are the colors to be used, the names are the categories they will be assigned to:
+mycolors <- c("blue", "red", "black")
+names(mycolors) <- c("DOWN", "UP", "NO")
+p3 <- p2 + scale_colour_manual(values = mycolors)
+```
+
+```{r}
+# Now write down the name of genes beside the points...
+# Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+res$delabel <- NA
+res$delabel[res$diffexpressed != "NO"] <- res$row[res$diffexpressed != "NO"]
+```
+
+```{r}
+# Finally, we can organize the labels nicely using the "ggrepel" package and the geom_text_repel() function
+# load library
+library(ggrepel)
+# plot adding up all layers we have seen so far
+ggplot(data=res, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed, label=delabel)) +
+        geom_point() + 
+        theme_minimal() +
+       geom_text_repel(aes(label=ifelse(abs(log2FoldChange)>3,as.character(delabel),'')),
+                point.padding = 0.5) +
+        scale_color_manual(values=c("blue", "black", "red")) +
+        geom_vline(xintercept=c(-0.6, 0.6), col="red") +
+        geom_hline(yintercept=-log10(0.05), col="red")
+```
+```{r}
+# Count how many adult vs. pediatric
+colData_CGGA_SJC_adult <- subset(colData_CGGA_SJC_age, Age_type == "Adult")
+colData_CGGA_SJC_ped <- subset(colData_CGGA_SJC_age, Age_type == "Pediatric")
+
+
+print(paste0('Adult: ', nrow(colData_CGGA_SJC_adult), 'Pediatric: ', nrow(colData_CGGA_SJC_ped)))
+```
+
+### HGG vs. LGG (in pediatric cohort from SJC)
+```{r}
+colData_CGGA_ped_grade <- colData_ped[c('Grade_type', 'Dataset')]
+colData_SJC_clean <- colData_SJC[!duplicated(colData_SJC$sample_name),]
+rownames(colData_SJC_clean) <- colData_SJC_clean$sample_name
+names(colData_SJC_clean)[names(colData_SJC_clean) == 'Diagnosis'] <- 'Grade_type'
+colData_SJC_grade <- colData_SJC_clean %>% 
+  drop_na(Grade_type) %>%
+  mutate(Dataset = 'SJC') %>%
+  select(c('Grade_type', 'Dataset'))
+colData_CGGA_SJC_ped_grade <- rbind(colData_CGGA_ped_grade, colData_SJC_grade)
+```
+
+```{r}
+countData_CGGA_ped_SJC <- merge(countData_ped, countData_SJC, by='row.names', all=FALSE)
+rownames(countData_CGGA_ped_SJC) <- countData_CGGA_ped_SJC$Row.names
+countData_CGGA_ped_SJC <- countData_CGGA_ped_SJC[ , !(names(countData_CGGA_ped_SJC) %in% c('Row.names', 'Gene'))]
+```
+
+```{r}
+common_samples <- intersect(rownames(colData_CGGA_SJC_ped_grade), names(countData_CGGA_ped_SJC))
+colData_CGGA_SJC_ped_grade <- colData_CGGA_SJC_ped_grade[common_samples, , drop=FALSE] 
+countData_CGGA_ped_SJC <- countData_CGGA_ped_SJC[, common_samples, drop=FALSE] 
+```
+
+```{r}
+identical(colnames(countData_CGGA_ped_SJC), rownames(colData_CGGA_SJC_ped_grade))
+```
+
+```{r}
+# Build DESeqDataSet object
+dds <- DESeqDataSetFromMatrix(countData = countData_CGGA_ped_SJC,
+                              colData = colData_CGGA_SJC_ped_grade,
+                              design = ~ Dataset + Grade_type)
+dds
+```
+
+```{r}
+# Run DESeq pipeline
+dds <- DESeq(dds)
+vsdata <- vst(dds, blind=FALSE)
+
+# Run PCA to visualize differences within consolidated dataset (and remove batch effects if necessary)
+plotPCA(vsdata, intgroup="Grade_type")
+plotPCA(vsdata, intgroup="Dataset")
+
+mat <- assay(vsdata)
+design_grade <- model.matrix(~Grade_type, data=colData_CGGA_SJC_ped_grade)
+mat <- limma::removeBatchEffect(mat, batch=vsdata$Dataset, design = design_grade)
+assay(vsdata) <- mat
+
+# Check PCA after batch effect removal
+plotPCA(vsdata, intgroup="Grade_type")
+plotPCA(vsdata, intgroup="Dataset")
+```
+
+```{r}
+res <- results(dds, contrast = c('Grade_type', 'HGG', 'LGG'), tidy=TRUE)
+res <- tbl_df(res)
+res
+```
+
+```{r}
+# Sort results by adjusted p-values and log2FC values
+res_sorted <- res %>% arrange(padj, desc(log2FoldChange))
+
+# Identify and filter for significantly differentially expressed genes
+res_filtered <- res_sorted %>% filter(padj<0.05)
+
+write.csv(as.data.frame(res_filtered), file='cgga_ped_sjc_HGGvLGG.csv')
+
+write.csv(as.data.frame(res_sorted), file='cgga_ped_sjc_HGGvLGG_unfiltered.csv')
+```
+
+```{r}
+# Visualize results using volcano plot
+
+# The significantly differentially expressed genes are the ones found in the upper-left and upper-right corners.
+# Add a column to the data frame to specify if they are UP- or DOWN- regulated (log2FoldChange respectively positive or negative)
+
+# add a column of NAs
+res$diffexpressed <- "NO"
+# if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+res$diffexpressed[res$log2FoldChange > 0.6 & res$padj < 0.05] <- "UP"
+# if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+res$diffexpressed[res$log2FoldChange < -0.6 & res$padj < 0.05] <- "DOWN"
+
+# Re-plot but this time color the points with "diffexpressed"
+p <- ggplot(data=res, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed)) + geom_point() + theme_minimal()
+
+# Add lines as before...
+p2 <- p + geom_vline(xintercept=c(-0.6, 0.6), col="red") +
+        geom_hline(yintercept=-log10(0.05), col="red")
+```
+
+```{r}
+## Change point color 
+
+# 1. by default, it is assigned to the categories in an alphabetical order):
+p3 <- p2 + scale_color_manual(values=c("blue", "black", "red"))
+
+# 2. to automate a bit: ceate a named vector: the values are the colors to be used, the names are the categories they will be assigned to:
+mycolors <- c("blue", "red", "black")
+names(mycolors) <- c("DOWN", "UP", "NO")
+p3 <- p2 + scale_colour_manual(values = mycolors)
+```
+
+```{r}
+# Now write down the name of genes beside the points...
+# Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+res$delabel <- NA
+res$delabel[res$diffexpressed != "NO"] <- res$row[res$diffexpressed != "NO"]
+```
+
+```{r}
+# Finally, we can organize the labels nicely using the "ggrepel" package and the geom_text_repel() function
+# load library
+library(ggrepel)
+# plot adding up all layers we have seen so far
+ggplot(data=res, aes(x=log2FoldChange, y=-log10(padj), col=diffexpressed, label=delabel)) +
+        geom_point() + 
+        theme_minimal() +
+       geom_text_repel(aes(label=ifelse(abs(log2FoldChange)>3,as.character(delabel),'')),
+                point.padding = 0.5) +
+        scale_color_manual(values=c("blue", "black", "red")) +
+        geom_vline(xintercept=c(-0.6, 0.6), col="red") +
+        geom_hline(yintercept=-log10(0.05), col="red")
+```
+
+```{r}
+# Count how many HGG vs. LGG
+colData_CGGA_SJC_HGG <- subset(colData_CGGA_SJC_ped_grade, Grade_type == "HGG")
+colData_CGGA_SJC_LGG <- subset(colData_CGGA_SJC_ped_grade, Grade_type == "LGG")
+
+
+print(paste0('HGG: ', nrow(colData_CGGA_SJC_HGG), 'LGG: ', nrow(colData_CGGA_SJC_LGG)))
+```
