@@ -18,11 +18,11 @@ Cell lines: 8 total samples (6 HGG - LGG85, LGG349, BT138, BT237, BT54, BT88; 2 
 
 ## Differential expression and pathway enrichment analyses of bulk RNA-seq (CGGA, SJC, CCLE)
 **Packages:** DESeq2, limma <br/>
-Refer to "Adult_ped_glioma_bulkRNAseq.Rmd" for code used in differential expression analyses on patients. <br/>
+Refer to "Adult_ped_glioma_bulkRNAseq.Rmd" for code used in differential expression analyses on patients. *(Author: Aleysha)*<br/>
 Refer to "" for code used in differential expression analysis on cell lines. <br/>
 Pathway enrichment was conducted separately using Gene Set Enrichment Analysis (GSEA) and Cytoscape visualization of differential expression marker outputs.
 
 ## scRNA-seq analysis of tumor composition and differential expression markers (GSE249263, GSE162631, GSE263796)
 **Packages:** Seurat <br/>
-Refer to "" for code used in scRNA-seq and differential expression analyses on patients. <br/>
+Refer to "BENG204Project.Rmd" for code used in scRNA-seq and differential expression analyses on patients. *(Author: Kimmy)*<br/>
 Refer to "" for code used in scRNA-seq analysis on cell lines. <br/>
