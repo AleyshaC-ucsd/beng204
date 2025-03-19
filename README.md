@@ -10,9 +10,19 @@ Patients: 3 datasets ; 161 pediatric (under age 21) and 987 adult samples; prima
 * **Cancer Cell Line Encyclopedia (CCLE)** <br/>
 Cell lines: 69 cell lines, RMA-normalized mRNA expression data (ENTREZG v15 CDF), sourced from Affymetrix U133+2 arrays<br/>
 <br/>
+<br/>
 Single-cell RNA-seq analysis focused on the following datasets:<br/>
 * **Gene Expression Omnibus (GEO) hosted by The National Center for Biotechnology Information website** <br/>
 SC from patients: 21 peds samples (5 HGG, 13 LGG, 3 Normal); 8 adult samples from 4 patients (HGG and Normal for each)<br/>
 SC from cell lines: 8 total samples (6 HGG - LGG85, LGG349, BT138, BT237, BT54, BT88; 2 LGG - LGG275, LGG336)<br/>
 <br/>
-## Differential expression and pathway enrichment analyses of bulk RNA-seq (CGGA
+## Differential expression and pathway enrichment analyses of bulk RNA-seq (CGGA, SJC, CCLE)
+**Packages:** DESeq2, limma <br/>
+Refer to "Adult_ped_glioma_bulkRNAseq.Rmd" for code used in differential expression analyses on patients. <br/>
+Refer to "" for code used in differential expression analysis on cell lines. <br/>
+Pathway enrichment was conducted separately using Gene Set Enrichment Analysis (GSEA) and Cytoscape visualization of differential expression marker outputs.
+
+## scRNA-seq analysis of tumor composition and differential expression markers (GSE249263, GSE162631, GSE263796)
+**Packages:** Seurat <br/>
+Refer to "" for code used in scRNA-seq and differential expression analyses on patients. <br/>
+Refer to "" for code used in scRNA-seq analysis on cell lines. <br/>
