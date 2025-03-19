@@ -1,0 +1,713 @@
+---
+title: "BENG204Project"
+output: html_document
+date: "2025-02-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+```{r}
+library(Seurat)
+library(SeuratData)
+library(patchwork)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(future)
+library(rhdf5)
+library(DESeq2)
+plan("multisession", workers = 4)  # Set number of workers (adjust based on your CPU cores)
+options(future.globals.maxSize = 40 * 2^30)
+```
+
+```{r}
+# load peds datasets from GSE249263
+S1 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932543_S1")
+S2 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932544_S2")
+S3 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932545_S3")
+S4 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932546_S4")
+S5 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932547_S5")
+S6 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932548_S6")
+S7 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932549_S7")
+S8 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932550_S8")
+S9 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932551_S9")
+S10 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932552_S10")
+S11 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932553_S11")
+S12 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932554_S12")
+S13 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932555_S13")
+S14 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932556_S14")
+S15 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932557_S15")
+S16 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932558_S16")
+S17 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932559_S17")
+S18 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932560_S18")
+S19 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932561_S19")
+S20 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932562_S20")
+S21 <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/GSM7932563_S21")
+
+# create Seurat objects
+for (i in 1:21) {
+  obj_name <- paste0("S", i)
+  obj <- get(obj_name)
+  obj <- CreateSeuratObject(counts = obj)
+  assign(obj_name, obj)
+}
+```
+
+```{r}
+# load adult datasets from GSE162631
+R1N <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/raw_counts_matrix/R1_N")
+R1T <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/raw_counts_matrix/R1_T")
+R2N <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/raw_counts_matrix/R2_N")
+R2T <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/raw_counts_matrix/R2_T")
+R3N <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/raw_counts_matrix/R3_N")
+R3T <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/raw_counts_matrix/R3_T")
+R4N <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/raw_counts_matrix/R4_N")
+R4T <- Read10X(data.dir = "/Users/kimmywennerholm/Desktop/BENG204Project/raw_counts_matrix/R4_T")
+
+# create Seurat objects
+for (i in 1:4) {
+   obj_name_N <- paste0("R", i, "N")
+   obj_name_T <- paste0("R", i, "T")
+   obj_N <- get(obj_name_N)
+   obj_T <- get(obj_name_T)
+   obj_N <- CreateSeuratObject(counts = obj_N)
+   obj_T <- CreateSeuratObject(counts = obj_T)
+   assign(obj_name_N, obj_N)
+   assign(obj_name_T, obj_T)
+ }
+
+```
+
+```{r}
+# Add metadata to peds
+S1$disease = "HGG"
+S2$disease = "HGG"
+S3$disease = "HGG"
+S4$disease = "HGG"
+S5$disease = "HGG"
+S6$disease = "LGG"
+S7$disease = "LGG"
+S8$disease = "LGG"
+S9$disease = "LGG"
+S10$disease = "LGG"
+S11$disease = "LGG"
+S12$disease = "LGG"
+S13$disease = "LGG"
+S14$disease = "LGG"
+S15$disease = "LGG"
+S16$disease = "LGG"
+S17$disease = "LGG"
+S18$disease = "LGG"
+S19$disease = "Normal"
+S20$disease = "Normal"
+S21$disease = "Normal"
+
+S1$age <- "ped"
+S2$age <- "ped"
+S3$age <- "ped"
+S4$age <- "ped"
+S5$age <- "ped"
+S6$age <- "ped"
+S7$age <- "ped"
+S8$age <- "ped"
+S9$age <- "ped"
+S10$age <- "ped"
+S11$age <- "ped"
+S12$age <- "ped"
+S13$age <- "ped"
+S14$age <- "ped"
+S15$age <- "ped"
+S16$age <- "ped"
+S17$age <- "ped"
+S18$age <- "ped"
+S19$age <- "ped"
+S20$age <- "ped"
+S21$age <- "ped"
+
+S1$patient = "S1"
+S2$patient = "S2"
+S3$patient = "S3"
+S4$patient = "S4"
+S5$patient = "S5"
+S6$patient = "S6"
+S7$patient = "S7"
+S8$patient = "S8"
+S9$patient = "S9"
+S10$patient = "S10"
+S11$patient = "S11"
+S12$patient = "S12"
+S13$patient = "S13"
+S14$patient = "S14"
+S15$patient = "S15"
+S16$patient = "S16"
+S17$patient = "S17"
+S18$patient = "S18"
+S19$patient = "S19"
+S20$patient = "S20"
+S21$patient = "S21"
+```
+
+
+```{r}
+# Add metadata to adult
+R1T$disease = "HGG"
+R2T$disease = "HGG"
+R3T$disease = "HGG"
+R4T$disease = "HGG"
+R1N$disease = "Normal"
+R2N$disease = "Normal"
+R3N$disease = "Normal"
+R4N$disease = "Normal"
+
+R1T$age = "adult"
+R2T$age = "adult"
+R3T$age = "adult"
+R4T$age = "adult"
+R1N$age = "adult"
+R2N$age = "adult"
+R3N$age = "adult"
+R4N$age = "adult"
+
+R1T$patient = "R1"
+R2T$patient = "R2"
+R3T$patient = "R3"
+R4T$patient = "R4"
+R1N$patient = "R1"
+R2N$patient = "R2"
+R3N$patient = "R3"
+R4N$patient = "R4"
+
+```
+
+```{r}
+# QC data in peds
+for (i in 1:21) {
+  obj_name <- paste0("S", i)
+  obj <- get(obj_name)
+  obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")
+  obj <- subset(obj, subset = nFeature_RNA > 200 & nFeature_RNA < 2200 & percent.mt < 5)
+  assign(obj_name, obj)
+}
+```
+
+
+```{r}
+# QC data in adult
+for (i in 1:4) {
+  obj_name <- paste0("R", i, "T")
+  obj <- get(obj_name)
+  obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")
+  obj <- subset(obj, subset = nFeature_RNA > 200 & nFeature_RNA < 2200 & percent.mt < 5)
+  assign(obj_name, obj)
+}
+
+for (i in 1:4) {
+  obj_name <- paste0("R", i, "N")
+  obj <- get(obj_name)
+  obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")
+  obj <- subset(obj, subset = nFeature_RNA > 200 & nFeature_RNA < 2200 & percent.mt < 5)
+  assign(obj_name, obj)
+}
+```
+
+```{r}
+# Concatenate two datasets
+peds <- merge(S1, y = c(S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S16, S17, S18, S19, S20, S21))
+
+adult <- merge(R1N, y = c(R1T, R2N, R2T, R3N, R3T, R4N, R4T))
+```
+
+```{r}
+# run standard analysis workflow on peds
+peds <- NormalizeData(peds)
+peds <- FindVariableFeatures(peds)
+peds <- ScaleData(peds)
+peds <- RunPCA(peds)
+
+peds <- FindNeighbors(peds, dims = 1:30, reduction = "pca")
+peds <- FindClusters(peds, resolution = 0.05, cluster.name = "unintegrated_clusters")
+
+peds <- RunUMAP(peds, dims = 1:30, reduction = "pca", reduction.name = "umap.unintegrated")
+DimPlot(peds, reduction = "umap.unintegrated", group.by = c("seurat_clusters", "disease"))
+```
+
+```{r}
+# run standard analysis workflow on adult
+adult <- NormalizeData(adult)
+adult <- FindVariableFeatures(adult)
+adult <- ScaleData(adult)
+adult <- RunPCA(adult)
+
+adult <- FindNeighbors(adult, dims = 1:30, reduction = "pca")
+adult <- FindClusters(adult, resolution = 0.05, cluster.name = "unintegrated_clusters")
+
+adult <- RunUMAP(adult, dims = 1:30, reduction = "pca", reduction.name = "umap.unintegrated")
+DimPlot(adult, reduction = "umap.unintegrated", group.by = c("seurat_clusters", "disease", "patient"))
+```
+
+```{r}
+# CHECKPOINT: save standard analyzed objects
+saveRDS(peds, "/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/peds.rds")
+saveRDS(adult, "/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/adult.rds")
+saveRDS(combo, "/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/combo.rds")
+```
+
+```{r}
+# CHECKPOINT: read in standard analyzed objects
+peds <- readRDS("/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/peds.rds")
+adult <- readRDS("/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/adult.rds")
+combo <- readRDS("/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/combo.rds")
+```
+
+```{r}
+# integrate the datasets
+peds_i <- subset(peds, cells = sample(Cells(peds), size = 50000))
+
+peds_i <- FindVariableFeatures(peds_i, selection.method = "vst", nfeatures = 2000)
+peds_i <- ScaleData(peds_i, verbose = F)
+peds_i <- RunPCA(peds_i, npcs = 10, approx = TRUE)
+
+# Subset the data to a smaller number of cells (5000 cells)
+subset_peds_i <- subset(peds_i, cells = sample(Cells(peds_i), size = 5000))
+
+DefaultAssay(subset_peds_i) <- "RNA"
+
+# Perform integration on the subset
+subset_peds_i <- IntegrateLayers(object = subset_peds_i, 
+                                  method = "CCAIntegration", 
+                                  orig.reduction = "pca", 
+                                  new.reduction = "integrated.cca", 
+                                  dims = 1:10, 
+                                  k.weight = 50,  # Reduce k.weight
+                                  verbose = FALSE)
+
+
+# Transfer the integrated reduction to the full dataset
+peds_i[["integrated.cca"]] <- subset_peds_i[["integrated.cca"]]
+
+peds_i <- FindNeighbors(peds_i, reduction = "integrated.cca", dims = 1:10, k.param = 15)
+peds_i <- FindClusters(peds_i, resolution = 0.2, algorithm = 2)
+
+# Now, perform UMAP on the full dataset using the integrated data
+peds_i <- RunUMAP(peds_i, reduction = "integrated.cca", dims = 1:10, verbose = FALSE)
+
+peds_i <- JoinLayers(peds_i)
+
+# Visualization
+DimPlot(peds_i, reduction = "umap", group.by = c("seurat_clusters", "disease")) + 
+  ggtitle("UMAP of Glioma Clusters")
+
+# Generate the UMAP plot for seurat_clusters
+umap_seurat_clusters <- DimPlot(peds_i, reduction = "umap", group.by = "seurat_clusters") + 
+  ggtitle("seurat_clusters")  # Title for the first UMAP plot
+
+# Generate the UMAP plot for disease
+umap_disease <- DimPlot(peds_i, reduction = "umap", group.by = "disease") + 
+  ggtitle("disease")  # Title for the second UMAP plot
+
+# Combine both plots and add a common title
+combined_plot <- umap_seurat_clusters + umap_disease + 
+  plot_annotation(title = "UMAP of Pediatric Glioma Dataset")  # Common title for both plots
+print(combined_plot)
+
+```
+
+```{r}
+# integrate the datasets
+adult_i <- SketchData(object = adult, dims = 10, ncells = 5000, method = "LeverageScore", sketched.assay = "sketch")
+
+DefaultAssay(adult_i) <- "sketch"
+adult_i <- FindVariableFeatures(adult_i, selection.method = "vst", nfeatures = 2000, verbose = F)
+adult_i <- ScaleData(adult_i, verbose = F)
+adult_i <- RunPCA(adult_i, npcs = 10, approx = TRUE, verbose = F)
+
+adult_i <- IntegrateLayers(object = adult_i, method = "CCAIntegration", orig.reduction = "pca", new.reduction = "integrated.cca", dims = 1:10, k.weight = 50, verbose = FALSE)
+
+# re-join layers after integration
+adult_i[["RNA"]] <- JoinLayers(adult_i[["RNA"]])
+
+adult_i <- FindNeighbors(adult_i, reduction = "integrated.cca", dims = 1:10, k.param = 15)
+adult_i <- FindClusters(adult_i, resolution = 0.2, algorithm = 2)
+
+adult_i <- RunUMAP(adult_i, dims = 1:10, reduction = "integrated.cca", return.model = T, verbose = F)
+
+adult_i <- JoinLayers(adult_i)
+
+# Visualization
+# Generate the UMAP plot for seurat_clusters
+umap_seurat_clusters <- DimPlot(adult_i, reduction = "umap", group.by = "seurat_clusters") + 
+  ggtitle("seurat_clusters")  # Title for the first UMAP plot
+
+# Generate the UMAP plot for disease
+umap_disease <- DimPlot(adult_i, reduction = "umap", group.by = "disease") + 
+  ggtitle("disease")  # Title for the second UMAP plot
+
+# Combine both plots and add a common title
+combined_plot <- umap_seurat_clusters + umap_disease + 
+  plot_annotation(title = "UMAP of Adult Glioma Dataset")  # Common title for both plots
+print(combined_plot)
+```
+
+```{r}
+# CHECKPOINT: save integrated objects
+saveRDS(peds_i, "/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/peds_i.rds")
+saveRDS(adult_i, "/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/adult_i.rds")
+```
+
+```{r}
+# CHECKPOINT: read in integrated objects
+peds_i <- readRDS("/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/peds_i.rds")
+adult_i <- readRDS("/Users/kimmywennerholm/Desktop/BENG204Project/Seurat_objects/adult_i.rds")
+```
+
+```{r}
+# filter out low expression genes and subset
+count_matrix <- GetAssayData(peds_i, slot = "counts")
+filtered_genes <- rownames(count_matrix)[Matrix::rowSums(count_matrix > 0) > 100]
+adult_i <- subset(peds_i, features = filtered_genes)
+
+count_matrix <- GetAssayData(adult_i, slot = "counts")
+filtered_genes <- rownames(count_matrix)[Matrix::rowSums(count_matrix > 0) > 100]
+adult_i <- subset(adult_i, features = filtered_genes)
+
+# find top markers of each cluster
+peds_cluster_markers <- FindAllMarkers(object = peds_i)
+adult_cluster_markers <- FindAllMarkers(object = adult_i)
+
+write.csv(peds_cluster_markers, "/Users/kimmywennerholm/Desktop/BENG204Project/PedsTopClusterMarkers.csv")
+write.csv(adult_cluster_markers, "/Users/kimmywennerholm/Desktop/BENG204Project/AdultTopClusterMarkers.csv")
+```
+
+```{r}
+# Plot heatmap of top variable genes to confirm distinct clusters
+peds_cluster_markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(peds_i, features = top10$gene)
+
+adult_cluster_markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(adult_i, features = top10$gene)
+```
+
+```{r}
+# Assign cell type to cluster based on manual analysis of cluster_markers
+new.cluster.ids <- c("Inflammatory Immune Cells", "T Cells", "Neuronal/Glial Progenitors", "Plasmacytoid Dendritic Cells", "Epithelial-like Cells", "Myeloid/MDSCs", "Mesenchymal-like Cells")
+names(new.cluster.ids) <- levels(peds_i)
+peds_i <- RenameIdents(peds_i, new.cluster.ids)
+
+celltype <- peds_i@active.ident
+peds_i <- AddMetaData(peds_i, metadata = celltype, col.name = 'celltype')
+
+# Visualization
+# Generate the UMAP plot for seurat_clusters
+umap_celltype <- DimPlot(peds_i, reduction = "umap", group.by = "celltype") + 
+  ggtitle("Cell Type")  # Title for the first UMAP plot
+
+# Generate the UMAP plot for disease
+umap_disease <- DimPlot(peds_i, reduction = "umap", group.by = "disease") + 
+  ggtitle("Disease")  # Title for the second UMAP plot
+
+# Combine both plots and add a common title
+combined_plot <- umap_celltype + umap_disease + 
+  plot_annotation(title = "UMAP of Pediatric Glioma Dataset")  # Common title for both plots
+print(combined_plot)
+```
+
+```{r}
+# Assign cell type to cluster based on manual analysis of cluster_markers
+new.cluster.ids <- c("Inflammatory immune cells",
+"Astrocytes",
+"Endothelial cells",
+"Microglia",
+"Fibroblasts",
+"Granulocytes",
+"Cytotoxic T cells",
+"Proliferating cancer cells")
+names(new.cluster.ids) <- levels(adult_i)
+adult_i <- RenameIdents(adult_i, new.cluster.ids)
+
+celltype <- adult_i@active.ident
+adult_i <- AddMetaData(adult_i, metadata = celltype, col.name = 'celltype')
+
+# Visualization
+# Generate the UMAP plot for seurat_clusters
+umap_celltype <- DimPlot(adult_i, reduction = "umap", group.by = "celltype") + 
+  ggtitle("Cell Type")  # Title for the first UMAP plot
+
+# Generate the UMAP plot for disease
+umap_disease <- DimPlot(adult_i, reduction = "umap", group.by = "disease") + 
+  ggtitle("Disease")  # Title for the second UMAP plot
+
+# Combine both plots and add a common title
+combined_plot <- umap_celltype + umap_disease + 
+  plot_annotation(title = "UMAP of Adult Glioma Dataset")  # Common title for both plots
+print(combined_plot)
+```
+
+
+```{r}
+## peds
+
+# Summarize the data by cell type and disease, excluding NA values
+cell_type_disease_counts <- peds_i@meta.data %>%
+  filter(!is.na(celltype)) %>%  # Remove rows where celltype is NA
+  group_by(celltype, disease) %>%
+  tally() %>%
+  ungroup()
+
+# Calculate proportions
+cell_type_disease_counts <- cell_type_disease_counts %>%
+  group_by(disease) %>%
+  mutate(proportion = n / sum(n)) %>%
+  ungroup()
+
+# Reverse the order of the disease factor
+cell_type_disease_counts <- cell_type_disease_counts %>%
+  mutate(disease = factor(disease, levels = rev(unique(disease))))  # Reverse order
+
+# Create the bar plot
+barplot <- ggplot(cell_type_disease_counts, aes(x = celltype, y = proportion, fill = disease)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Cell Type", y = "Proportion", title = "Proportions of Cell Types by Disease State in Pediatric Gliomas") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 18, angle = -45, hjust = 0),  # Right-justify x-axis labels
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 18),
+    axis.title.y = element_text(size = 18),
+    plot.title = element_text(size = 20, hjust = 0.5),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 16)
+  )
+
+# Display the plot
+barplot  
+
+```
+
+```{r}
+## adult
+
+# Summarize the data by cell type and sex
+cell_type_disease_counts <- adult_i@meta.data %>%
+  filter(!is.na(celltype)) %>%  # Remove rows where celltype is NA
+  group_by(celltype, disease) %>%
+  tally() %>%
+  ungroup()
+
+# Calculate proportions
+cell_type_disease_counts <- cell_type_disease_counts %>%
+  group_by(disease) %>%
+  mutate(proportion = n / sum(n)) %>%
+  ungroup()
+
+# Check the resulting data
+head(cell_type_disease_counts)
+
+# Reverse the order of the disease factor
+cell_type_disease_counts <- cell_type_disease_counts %>%
+  mutate(disease = factor(disease, levels = rev(unique(disease))))  # Reverse order
+
+# Create the bar plot
+barplot <- ggplot(cell_type_disease_counts, aes(x = celltype, y = proportion, fill = disease)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Cell Type", y = "Proportion", title = "Proportions of Cell Types by Disease State in Adult Gliomas") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 18, angle = -45, hjust = 0),  # Right-justify x-axis labels
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 18),
+    axis.title.y = element_text(size = 18),
+    plot.title = element_text(size = 20, hjust = 0.5),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 16)
+  )
+
+# Display the plot
+barplot  
+```
+
+```{r}
+## peds
+
+# Set the 'disease' metadata column as the identity
+peds_i <- SetIdent(peds_i, value = "disease")
+
+# Perform differential expression analysis between Normal and LGG
+de_results_Normal_LGG <- FindMarkers(peds_i, ident.1 = "LGG", ident.2 = "Normal")
+
+# Perform differential expression analysis between Normal and HGG
+de_results_Normal_HGG <- FindMarkers(peds_i, ident.1 = "HGG", ident.2 = "Normal")
+
+# Perform differential expression analysis between LGG and HGG
+de_results_LGG_HGG <- FindMarkers(peds_i, ident.1 = "HGG", ident.2 = "LGG")
+
+# View the results
+head(de_results_Normal_LGG)
+head(de_results_Normal_HGG)
+head(de_results_LGG_HGG)
+```
+
+```{r}
+## peds
+
+# Function to create a volcano plot with manually labeled top markers and blue points
+volcano_plot_with_manual_labels <- function(de_results, title, top_markers) {
+  # Make sure the p-value is not 0 to avoid errors in log transformation
+  de_results$p_val_adj[de_results$p_val_adj == 0] <- 1e-100
+
+# Find top 5 markers based on the smallest adjusted p-value
+  top_markers <- de_results %>%
+    arrange(p_val_adj) %>%
+    arrange(avg_log2FC) %>%
+    head(5) %>%
+    rownames()
+  bottom_markers <- de_results %>%
+    arrange(p_val_adj) %>%
+    arrange(avg_log2FC) %>%
+    tail(5) %>%
+    rownames()
+  combined_markers <- c(top_markers, bottom_markers)
+  
+# Print top markers to check if they are being selected correctly
+  print(paste("Top markers for", title, ":", paste(top_markers, collapse = ", ")))
+  print(paste("Bottom markers for", title, ":", paste(bottom_markers, collapse = ", ")))
+  
+  # Assuming 'top_markers' and 'bottom_markers' are correctly defined
+ggplot(de_results, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
+  geom_point(aes(color = p_val_adj < 0.05 & abs(avg_log2FC) > 1), size = 1, alpha = 0.6) +  # Other points
+  scale_color_manual(values = c("gray", "red")) + # Color points: significant in red
+  theme_minimal() +
+  labs(title = title, x = "Log2 Fold Change", y = "-Log10 Adjusted P-Value") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "blue") + # Threshold for fold change
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue") + # Threshold for p-value
+  geom_point(
+    data = de_results[rownames(de_results) %in% combined_markers, ],  # Filter for top markers
+    aes(x = avg_log2FC, y = -log10(p_val_adj)), 
+    color = "cyan", 
+    size = 3, 
+    shape = 16  # Solid circles for labeled points
+  ) +
+  geom_text_repel(
+    data = de_results[rownames(de_results) %in% top_markers, ], 
+    aes(label = rownames(de_results)[rownames(de_results) %in% top_markers]), 
+    color = "blue",  # Blue text for labels
+    size = 5, 
+    box.padding = 0.35, 
+    point.padding = 0.5, 
+    segment.color = 'gray'
+  ) +
+  geom_text_repel(
+    data = de_results[rownames(de_results) %in% bottom_markers, ], 
+    aes(label = rownames(de_results)[rownames(de_results) %in% bottom_markers]), 
+    color = "green",  # Green text for labels
+    size = 5, 
+    box.padding = 0.35, 
+    point.padding = 0.5, 
+    segment.color = 'gray'
+  )
+}
+
+# Volcano plot for Normal vs LGG with manually labeled top markers
+volcano_plot_with_manual_labels(de_results_Normal_LGG, "Normal vs LGG", top_markers_Normal_LGG)
+
+# Volcano plot for Normal vs HGG with manually labeled top markers
+volcano_plot_with_manual_labels(de_results_Normal_HGG, "Normal vs HGG", top_markers_Normal_HGG)
+
+# Volcano plot for LGG vs HGG with manually labeled top markers
+volcano_plot_with_manual_labels(de_results_LGG_HGG, "LGG vs HGG", top_markers_LGG_HGG)
+```
+
+```{r}
+## adult
+
+# Set the 'disease' metadata column as the identity
+adult_i <- SetIdent(adult_i, value = "disease")
+
+# Perform differential expression analysis between Normal and HGG
+de_results_adult_Normal_HGG <- FindMarkers(adult_i, ident.1 = "HGG", ident.2 = "Normal")
+
+# View the results
+head(de_results_adult_Normal_HGG)
+```
+
+```{r}
+## adult
+
+# Function to create a volcano plot with manually labeled top markers and blue points
+volcano_plot_with_manual_labels <- function(de_results, title, top_markers) {
+  # Make sure the p-value is not 0 to avoid errors in log transformation
+  de_results$p_val_adj[de_results$p_val_adj == 0] <- 1e-100
+
+# Find top 5 markers based on the smallest adjusted p-value
+  top_markers <- de_results %>%
+    arrange(avg_log2FC) %>%
+    head(5) %>%
+    rownames()
+  bottom_markers <- de_results %>%
+    arrange(avg_log2FC) %>%
+    tail(5) %>%
+    rownames()
+  combined_markers <- c(top_markers, bottom_markers)
+  
+# Print top markers to check if they are being selected correctly
+  print(paste("Top markers for", title, ":", paste(top_markers, collapse = ", ")))
+  print(paste("Bottom markers for", title, ":", paste(bottom_markers, collapse = ", ")))
+  
+  # Assuming 'top_markers' and 'bottom_markers' are correctly defined
+ggplot(de_results, aes(x = avg_log2FC, y = -log10(p_val_adj))) +
+  geom_point(aes(color = p_val_adj < 0.05 & abs(avg_log2FC) > 1), size = 1, alpha = 0.6) +  # Other points
+  scale_color_manual(values = c("gray", "red")) + # Color points: significant in red
+  theme_minimal() +
+  labs(title = title, x = "Log2 Fold Change", y = "-Log10 Adjusted P-Value") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "blue") + # Threshold for fold change
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue") + # Threshold for p-value
+  geom_point(
+    data = de_results[rownames(de_results) %in% combined_markers, ],  # Filter for top markers
+    aes(x = avg_log2FC, y = -log10(p_val_adj)), 
+    color = "cyan", 
+    size = 3, 
+    shape = 16  # Solid circles for labeled points
+  ) +
+  geom_text_repel(
+    data = de_results[rownames(de_results) %in% top_markers, ], 
+    aes(label = rownames(de_results)[rownames(de_results) %in% top_markers]), 
+    color = "blue",  # Blue text for labels
+    size = 5, 
+    box.padding = 0.35, 
+    point.padding = 0.5, 
+    segment.color = 'gray'
+  ) +
+  geom_text_repel(
+    data = de_results[rownames(de_results) %in% bottom_markers, ], 
+    aes(label = rownames(de_results)[rownames(de_results) %in% bottom_markers]), 
+    color = "green",  # Green text for labels
+    size = 5, 
+    box.padding = 0.35, 
+    point.padding = 0.5, 
+    segment.color = 'gray'
+  )
+
+}
+
+# Volcano plot for Normal vs HGG with manually labeled top markers
+volcano_plot_with_manual_labels(de_results_adult_Normal_HGG, "Normal vs HGG", top_markers_Normal_HGG)
+
+```
+
+
