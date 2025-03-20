@@ -1,0 +1,269 @@
+---
+title: "BENG204ProjectHGGLGG"
+output: html_document
+date: "2025-03-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(Seurat)
+library(SeuratData)
+library(patchwork)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+```
+
+```{r}
+# load peds datasets
+S1 <- Read10X(data.dir = normalizePath("C:/Users/jxu23/OneDrive/Desktop/GSE263796_RAW/BT54", winslash = "/"))
+S2 <- Read10X(data.dir = normalizePath("C:/Users/jxu23/OneDrive/Desktop/GSE263796_RAW/BT88", winslash = "/"))
+S3 <- Read10X(data.dir = normalizePath("C:/Users/jxu23/OneDrive/Desktop/GSE263796_RAW/BT138", winslash = "/"))
+S4 <- Read10X(data.dir = normalizePath("C:/Users/jxu23/OneDrive/Desktop/GSE263796_RAW/BT237", winslash = "/"))
+S5 <- Read10X(data.dir = normalizePath("C:/Users/jxu23/OneDrive/Desktop/GSE263796_RAW/LGG85", winslash = "/"))
+S6 <- Read10X(data.dir = normalizePath("C:/Users/jxu23/OneDrive/Desktop/GSE263796_RAW/LGG275", winslash = "/"))
+S7 <- Read10X(data.dir = normalizePath("C:/Users/jxu23/OneDrive/Desktop/GSE263796_RAW/LGG336", winslash = "/"))
+S8 <- Read10X(data.dir = normalizePath("C:/Users/jxu23/OneDrive/Desktop/GSE263796_RAW/LGG349", winslash = "/"))
+
+for (i in 1:8) {
+  obj_name <- paste0("S", i)
+  obj <- get(obj_name)
+  obj <- CreateSeuratObject(counts = obj)
+  assign(obj_name, obj)
+}
+```
+
+```{r}
+# Add metadata
+S1$disease = "HGG"
+S2$disease = "HGG"
+S3$disease = "HGG"
+S4$disease = "HGG"
+S5$disease = "HGG"
+S6$disease = "LGG"
+S7$disease = "LGG"
+S8$disease = "HGG"
+
+
+```
+
+```{r}
+# save seurat objects post metadata labeling
+for (i in 1:8) {
+    obj_name <- paste0("S", i)  # Construct object name
+    file_path <- paste0("C:\\Users\\jxu23\\OneDrive\\Desktop\\GSE263796_RAW\\Seurat_objects\\", obj_name, ".rds")
+    saveRDS(get(obj_name), file_path)  # Save the actual object
+}
+
+```
+
+```{r}
+# read seurat objects post metadata labeling
+for (i in 1:8) {
+    obj_name <- paste0("S", i)  # Create object name (e.g., "S1")
+    file_path <- paste0("C:\\Users\\jxu23\\OneDrive\\Desktop\\GSE263796_RAW\\Seurat_objects\\", obj_name, ".rds")
+    
+    obj <- readRDS(file_path)  # Load the Seurat object
+    assign(obj_name, obj)  # Assign it back to its original variable name
+}
+
+```
+
+```{r}
+for (i in 1:8) {
+    obj_name <- paste0("S", i)
+    obj <- get(obj_name)  # Retrieve Seurat object
+
+    # ✅ Explicitly calculate mitochondrial gene percentage
+    obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")  # Adjust if needed
+
+    # ✅ Sanity Check: Print summary of percent.mt before filtering
+    print(paste("Sanity Check - Summary of percent.mt for", obj_name))
+    print(summary(obj$percent.mt))
+
+    # ✅ Sanity Check: Ensure percent.mt was successfully added
+    if ("percent.mt" %in% colnames(obj@meta.data)) {
+        print(paste("✅ percent.mt successfully calculated for", obj_name))
+    } else {
+        print(paste("❌ ERROR: percent.mt is missing for", obj_name))
+    }
+
+    # ✅ Apply QC Filtering
+    obj <- subset(obj, subset = nFeature_RNA > 100 & nFeature_RNA < 5000 & percent.mt < 15)
+
+    # ✅ Save the modified object back to memory
+    assign(obj_name, obj)
+
+    # ✅ Save the cleaned object to disk
+    saveRDS(obj, file = paste0("Cleaned_", obj_name, ".rds"))
+}
+
+
+# QC data
+for (i in 1:8) {
+    obj_name <- paste0("S", i)  # Generate object name
+    obj <- get(obj_name)  # Retrieve the Seurat object
+    
+    # Compute mitochondrial gene percentage
+    obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")  
+
+    # Filter low-quality cells
+    obj <- subset(obj, subset = nFeature_RNA > 100 & nFeature_RNA < 5000 & obj$percent.mt < 15)
+
+    # Save the modified object back
+    assign(obj_name, obj)
+
+}
+for (i in 1:8) {
+    obj_name <- paste0("S", i)
+    obj <- get(obj_name)
+    saveRDS(obj, file = paste0("Cleaned_", obj_name, ".rds"))
+}
+
+for (i in 1:8) {
+    obj_name <- paste0("S", i)
+    obj <- get(obj_name)
+    print(paste("Object:", obj_name, "Remaining cells after filtering:", ncol(obj)))
+}
+
+```
+
+```{r}
+# Concatenate two datasets
+combo <- merge(S1, y = c(S2, S3, S4, S5, S6, S7, S8), 
+               add.cell.ids = c("sample1", "sample2", "sample3", "sample4", "sample5", "sample6", "sample7", "sample8"))
+```
+
+```{r}
+# run standard analysis workflow
+combo <- NormalizeData(combo)
+combo <- FindVariableFeatures(combo)
+combo <- ScaleData(combo)
+combo <- RunPCA(combo)
+
+combo <- FindNeighbors(combo, dims = 1:30, reduction = "pca")
+combo <- FindClusters(combo, resolution = 0.05, cluster.name = "unintegrated_clusters")
+```
+
+```{r}
+combo <- RunUMAP(combo, dims = 1:30, reduction = "pca", reduction.name = "umap.unintegrated")
+DimPlot(combo, reduction = "umap.unintegrated", group.by = c("seurat_clusters", "disease"))
+```
+
+```{r}
+# integrate the datasets
+options(future.globals.maxSize = 16 * 2^30)
+
+object <- SketchData(object = combo, ncells = 5000, method = "LeverageScore", sketched.assay = "sketch")
+
+DefaultAssay(object) <- "sketch"
+object <- FindVariableFeatures(object, verbose = F)
+object <- ScaleData(object, verbose = F)
+object <- RunPCA(object, verbose = F)
+
+object <- IntegrateLayers(combo, method = RPCAIntegration, orig = "pca", new.reduction = "integrated.rpca", dims = 1:30, k.anchor = 20, verbose = F)
+
+# cluster the integrated data
+object <- FindNeighbors(object, reduction = "integrated.rpca", dims = 1:30)
+object <- FindClusters(object, resolution = 0.2)
+
+object <- RunUMAP(object, reduction = "integrated.rpca", dims = 1:30, return.model = T, verbose = F)
+DimPlot(object, group.by = c("seurat_clusters", "disease"), reduction = "umap")
+```
+
+```{r}
+object <- JoinLayers(object)
+cluster_markers <- FindAllMarkers(object = object)
+write.csv(cluster_markers, "C:\\Users\\jxu23\\OneDrive\\Desktop\\GSE263796_RAW\\TopClusterMarkers3.csv")
+```
+
+```{r}
+# Plot heatmap of top variable genes to confirm distinct clusters
+cluster_markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(object, features = top10$gene)
+```
+
+```{r, fig.width=12, fig.height=6}
+# Assign cell type to cluster based on manual analysis of cluster_markers
+new.cluster.ids <- c("Astrocytes", "Neural Progenitors", "Mesenchymal-like Cells", 
+                     "Mitotic Glioma Cells", "Neural Progenitors (less aggressive)")
+names(new.cluster.ids) <- levels(object)
+object <- RenameIdents(object, new.cluster.ids)
+
+# Generate UMAP plot with adjusted layout
+DimPlot(object, group.by = c("ident", "disease"), reduction = "umap", label = FALSE, 
+        pt.size = 0.5, label.size = 6) +
+  theme(
+    axis.text.x = element_text(size = 14), 
+    axis.text.y = element_text(size = 14), 
+    axis.title.x = element_text(size = 16), 
+    axis.title.y = element_text(size = 16), 
+    plot.title = element_text(size = 18, hjust = 0.5), 
+    legend.text = element_text(size = 12), 
+    legend.title = element_text(size = 14)
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5), # Center plot title
+    legend.position = "right" # Position legend to the right (optional)
+  ) +
+  ggtitle("UMAP Plot") 
+  #xlim(-7, 10) + ylim(-7, 7) # Adjust axes limits for better visualization
+
+```
+
+```{r}
+celltype <- object@active.ident
+object <- AddMetaData(object, metadata = celltype, col.name = 'celltype')
+```
+
+```{r}
+# Summarize the data by cell type and sex
+cell_type_disease_counts <- object@meta.data %>%
+  group_by(celltype, disease) %>%
+  tally() %>%
+  ungroup()
+
+# Calculate proportions
+cell_type_disease_counts <- cell_type_disease_counts %>%
+  group_by(disease) %>%
+  mutate(proportion = n / sum(n)) %>%
+  ungroup()
+
+# Check the resulting data
+head(cell_type_disease_counts)
+
+# Create the bar plot
+library(ggplot2)
+
+# Example plot
+barplot <- ggplot(cell_type_disease_counts, aes(x = celltype, y = proportion, fill = disease)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Cell Type", y = "Proportion", title = "Proportions of Cell Types by Disease State") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12, angle = 10, hjust = 0.5),  # Increase x-axis text size
+    axis.text.y = element_text(size = 14),  # Increase y-axis text size
+    axis.title.x = element_text(size = 18),  # Increase x-axis title size
+    axis.title.y = element_text(size = 18),  # Increase y-axis title size
+    plot.title = element_text(size = 20, hjust = 0.5),  # Increase plot title size
+    legend.text = element_text(size = 14),  # Increase legend text size
+    legend.title = element_text(size = 16)  # Increase legend title size
+  )
+
+# Display the plot
+barplot
+
+```
